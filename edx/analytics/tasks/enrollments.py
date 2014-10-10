@@ -1,7 +1,6 @@
 """Compute metrics related to user enrollments in courses"""
 
 import logging
-import textwrap
 import datetime
 
 import luigi
@@ -10,10 +9,9 @@ import luigi
 from edx.analytics.tasks.database_imports import ImportAuthUserProfileTask
 from edx.analytics.tasks.mapreduce import MapReduceJobTaskMixin, MapReduceJobTask
 from edx.analytics.tasks.pathutil import EventLogSelectionDownstreamMixin, EventLogSelectionMixin
-from edx.analytics.tasks.url import get_target_from_url, url_path_join
+from edx.analytics.tasks.url import get_target_from_url
 from edx.analytics.tasks.util import eventlog, opaque_key_util
-from edx.analytics.tasks.util.hive import WarehouseMixin, HiveTableTask, HiveTableFromQueryTask, HivePartition, HiveQueryToMysqlTask
-from edx.analytics.tasks.mysql_load import MysqlInsertTask
+from edx.analytics.tasks.util.hive import WarehouseMixin, HiveTableTask, HivePartition, HiveQueryToMysqlTask
 
 
 log = logging.getLogger(__name__)
@@ -326,13 +324,17 @@ class EnrollmentDailyTask(CourseEnrollmentTableDownstreamMixin, HiveQueryToMysql
             WHERE b.course_id IS NULL;
         """
 
-    table = 'course_enrollment_daily'
+    @property
+    def table(self):
+        return 'course_enrollment_daily'
 
-    columns = [
-        ('course_id', 'VARCHAR(255) NOT NULL'),
-        ('date', 'DATE NOT NULL'),
-        ('count', 'INTEGER'),
-    ]
+    @property
+    def columns(self):
+        return [
+            ('course_id', 'VARCHAR(255) NOT NULL'),
+            ('date', 'DATE NOT NULL'),
+            ('count', 'INTEGER'),
+        ]
 
     @property
     def indexes(self):
@@ -388,6 +390,7 @@ class EnrollmentDemographicTask(CourseEnrollmentTableDownstreamMixin, HiveQueryT
 
     @property
     def demographic_query(self):
+        """Query a demographic breakdown."""
         raise NotImplementedError
 
     @property
@@ -415,79 +418,103 @@ class EnrollmentDemographicTask(CourseEnrollmentTableDownstreamMixin, HiveQueryT
 class EnrollmentByGenderTask(EnrollmentDemographicTask):
     """Breakdown of enrollments by gender as reported by the user"""
 
-    demographic_query = """
-        SELECT
-            ce.date,
-            ce.course_id,
-            IF(p.gender != '', p.gender, NULL),
-            COUNT(ce.user_id)
-        FROM course_enrollment ce
-        LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
-        WHERE ce.at_end = 1
-        GROUP BY
-            ce.date,
-            ce.course_id,
-            IF(p.gender != '', p.gender, NULL)
-    """
-    table = 'course_enrollment_gender'
-    columns = [
-        ('date', 'DATE NOT NULL'),
-        ('course_id', 'VARCHAR(255) NOT NULL'),
-        ('gender', 'VARCHAR(6)'),
-        ('count', 'INTEGER'),
-    ]
+    @property
+    def demographic_query(self):
+        return """
+            SELECT
+                ce.date,
+                ce.course_id,
+                IF(p.gender != '', p.gender, NULL),
+                COUNT(ce.user_id)
+            FROM course_enrollment ce
+            LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
+            WHERE ce.at_end = 1
+            GROUP BY
+                ce.date,
+                ce.course_id,
+                IF(p.gender != '', p.gender, NULL)
+        """
+
+    @property
+    def table(self):
+        return 'course_enrollment_gender'
+
+    @property
+    def columns(self):
+        return [
+            ('date', 'DATE NOT NULL'),
+            ('course_id', 'VARCHAR(255) NOT NULL'),
+            ('gender', 'VARCHAR(6)'),
+            ('count', 'INTEGER'),
+        ]
 
 
 class EnrollmentByBirthYearTask(EnrollmentDemographicTask):
     """Breakdown of enrollments by age as reported by the user"""
 
-    demographic_query = """
-        SELECT
-            ce.date,
-            ce.course_id,
-            p.year_of_birth,
-            COUNT(ce.user_id)
-        FROM course_enrollment ce
-        LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
-        WHERE ce.at_end = 1
-        GROUP BY
-            ce.date,
-            ce.course_id,
-            p.year_of_birth
-    """
-    table = 'course_enrollment_birth_year'
-    columns = [
-        ('date', 'DATE NOT NULL'),
-        ('course_id', 'VARCHAR(255) NOT NULL'),
-        ('birth_year', 'INTEGER'),
-        ('count', 'INTEGER'),
-    ]
+    @property
+    def demographic_query(self):
+        return """
+            SELECT
+                ce.date,
+                ce.course_id,
+                p.year_of_birth,
+                COUNT(ce.user_id)
+            FROM course_enrollment ce
+            LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
+            WHERE ce.at_end = 1
+            GROUP BY
+                ce.date,
+                ce.course_id,
+                p.year_of_birth
+        """
+
+    @property
+    def table(self):
+        return 'course_enrollment_birth_year'
+
+    @property
+    def columns(self):
+        return [
+            ('date', 'DATE NOT NULL'),
+            ('course_id', 'VARCHAR(255) NOT NULL'),
+            ('birth_year', 'INTEGER'),
+            ('count', 'INTEGER'),
+        ]
 
 
 class EnrollmentByEducationLevelTask(EnrollmentDemographicTask):
     """Breakdown of enrollments by education level as reported by the user"""
 
-    demographic_query = """
-        SELECT
-            ce.date,
-            ce.course_id,
-            IF(p.level_of_education != '', p.level_of_education, NULL),
-            COUNT(ce.user_id)
-        FROM course_enrollment ce
-        LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
-        WHERE ce.at_end = 1
-        GROUP BY
-            ce.date,
-            ce.course_id,
-            IF(p.level_of_education != '', p.level_of_education, NULL)
-    """
-    table = 'course_enrollment_education_level'
-    columns = [
-        ('date', 'DATE NOT NULL'),
-        ('course_id', 'VARCHAR(255) NOT NULL'),
-        ('education_level', 'VARCHAR(6)'),
-        ('count', 'INTEGER'),
-    ]
+    @property
+    def demographic_query(self):
+        return """
+            SELECT
+                ce.date,
+                ce.course_id,
+                IF(p.level_of_education != '', p.level_of_education, NULL),
+                COUNT(ce.user_id)
+            FROM course_enrollment ce
+            LEFT OUTER JOIN auth_userprofile p ON p.user_id = ce.user_id
+            WHERE ce.at_end = 1
+            GROUP BY
+                ce.date,
+                ce.course_id,
+                IF(p.level_of_education != '', p.level_of_education, NULL)
+        """
+
+    @property
+    def table(self):
+        return 'course_enrollment_education_level'
+
+    @property
+    def columns(self):
+        return [
+            ('date', 'DATE NOT NULL'),
+            ('course_id', 'VARCHAR(255) NOT NULL'),
+            ('education_level', 'VARCHAR(6)'),
+            ('count', 'INTEGER'),
+        ]
 
 
 class ImportDemographicsIntoMysql(CourseEnrollmentTableDownstreamMixin, luigi.WrapperTask):

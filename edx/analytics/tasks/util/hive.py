@@ -171,14 +171,20 @@ class HivePartition(object):
 
 
 class HivePartitionParameter(Parameter):
+    """Allows partitions to be specified on the command line."""
 
-    def parse(self, s):
-        parts = string.split('=')
+    def parse(self, serialized_param):
+        parts = serialized_param.split('=')
         return HivePartition(parts[0], parts[1])
 
 
-class HiveTableFromQueryTask(HiveTableTask):
+class HiveTableFromQueryTask(HiveTableTask):  # pylint: disable=abstract-method
     """Creates a hive table from the results of a hive query."""
+
+    insert_query = luigi.Parameter()
+    table = luigi.Parameter()
+    columns = luigi.Parameter(is_list=True)
+    partition = HivePartitionParameter()
 
     def query(self):
         create_table_statements = super(HiveTableFromQueryTask, self).query()
@@ -189,31 +195,19 @@ class HiveTableFromQueryTask(HiveTableTask):
         """.format(
             table=self.table,
             partition=self.partition,
-            insert_query=self.insert_query.strip(),
+            insert_query=self.insert_query.strip(),  # pylint: disable=no-member
         )
 
         return create_table_statements + textwrap.dedent(full_insert_query)
-
-    @property
-    def insert_query(self):
-        """The query to execute to populate the table."""
-        raise NotImplementedError
 
     def output(self):
         return get_target_from_url(self.partition_location)
 
 
-class ParameterizedHiveTableFromQueryTask(HiveTableFromQueryTask):
-
-    insert_query = luigi.Parameter()
-    table = luigi.Parameter()
-    columns = luigi.Parameter(is_list=True)
-    partition = HivePartitionParameter()
-
-
 class HiveQueryToMysqlTask(WarehouseMixin, MysqlInsertTask):
+    """Populates a MySQL table with the results of a hive query."""
 
-    overwrite = luigi.BooleanParameter(default=True)
+    overwrite = luigi.BooleanParameter(default=True)  # Overwrite the MySQL data?
     hive_overwrite = luigi.BooleanParameter(default=False)
 
     SQL_TO_HIVE_TYPE = {
@@ -229,7 +223,7 @@ class HiveQueryToMysqlTask(WarehouseMixin, MysqlInsertTask):
 
     @property
     def insert_source_task(self):
-        return ParameterizedHiveTableFromQueryTask(
+        return HiveTableFromQueryTask(
             warehouse_path=self.warehouse_path,
             insert_query=self.query,
             table=self.table,
@@ -239,6 +233,8 @@ class HiveQueryToMysqlTask(WarehouseMixin, MysqlInsertTask):
         )
 
     def requires(self):
+        # MysqlInsertTask customizes requires() somewhat, so don't clobber that logic. Instead allow subclasses to
+        # extend the requirements with their own.
         requirements = super(HiveQueryToMysqlTask, self).requires()
         requirements['other_tables'] = self.required_tables
         return requirements
@@ -249,6 +245,7 @@ class HiveQueryToMysqlTask(WarehouseMixin, MysqlInsertTask):
 
     @property
     def query(self):
+        """Hive query to run."""
         raise NotImplementedError
 
     @property
@@ -257,14 +254,17 @@ class HiveQueryToMysqlTask(WarehouseMixin, MysqlInsertTask):
 
     @property
     def partition(self):
+        """HivePartition object specifying the partition to store the data in."""
         raise NotImplementedError
 
     @property
     def required_tables(self):
+        """List of tasks that generate any tables needed to run the query."""
         return []
 
     @property
     def hive_columns(self):
+        """Convert MySQL column data types to hive data types and return hive column specs as (name, type) tuples."""
         hive_cols = []
         for column in self.columns:
             column_name, sql_type = column
